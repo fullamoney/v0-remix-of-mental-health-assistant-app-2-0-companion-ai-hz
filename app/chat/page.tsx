@@ -10,11 +10,12 @@ import Image from "next/image"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Textarea } from "@/components/ui/textarea"
-import { getUserProfile, isOnboardingComplete, saveChatMessage } from "@/lib/storage"
+import { getUserProfile, isOnboardingComplete, saveChatMessage, loadChatMessagesFromSupabase } from "@/lib/storage"
 import { ArrowLeft, Send, Mic, MicOff, AlertCircle } from "lucide-react"
 import Link from "next/link"
 import type { UserProfile } from "@/lib/types"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { createClient } from "@/lib/supabase/client"
 
 export default function ChatPage() {
   const router = useRouter()
@@ -37,7 +38,33 @@ export default function ChatPage() {
     }
 
     setProfile(userProfile)
+
+    loadChatMessagesFromSupabase(userProfile.id).then((messages) => {
+      console.log("[v0] Loaded chat messages from Supabase:", messages.length)
+    })
+
     setIsLoading(false)
+
+    const supabase = createClient()
+    const channel = supabase
+      .channel("messages_channel")
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "messages",
+          filter: `user_id=eq.${userProfile.id}`,
+        },
+        (payload) => {
+          console.log("[v0] Real-time message received:", payload)
+        },
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
   }, [router])
 
   const { messages, sendMessage, status, error } = useChat({
