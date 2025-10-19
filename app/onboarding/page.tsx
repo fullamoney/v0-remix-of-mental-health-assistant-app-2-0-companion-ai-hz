@@ -88,27 +88,33 @@ export default function OnboardingPage() {
     (formData.hasTrauma === "no" || (formData.traumaDescription && formData.traumaTimeAgo && formData.traumaFeelings))
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-background via-background to-primary/5">
+    <div className="min-h-screen flex items-center justify-center p-3 sm:p-4 md:p-6 bg-gradient-to-br from-background via-background to-primary/5">
       <Card className="w-full max-w-2xl shadow-lg">
-        <CardHeader className="text-center space-y-2">
-          <div className="flex justify-center mb-4">
-            <Image src="/buddy-logo.png" alt="Buddy AI" width={300} height={300} className="w-48 h-auto" />
+        <CardHeader className="text-center space-y-2 px-4 sm:px-6">
+          <div className="flex justify-center mb-2 sm:mb-4">
+            <Image
+              src="/buddy-logo.png"
+              alt="Buddy AI"
+              width={300}
+              height={300}
+              className="w-32 sm:w-40 md:w-48 h-auto"
+            />
           </div>
-          <CardTitle className="text-3xl font-bold text-balance">Welcome to Buddy AI</CardTitle>
-          <CardDescription className="text-base text-pretty">
+          <CardTitle className="text-2xl sm:text-3xl font-bold text-balance">Welcome to Buddy AI</CardTitle>
+          <CardDescription className="text-sm sm:text-base text-pretty">
             Your personal mental health assistant. Let's get to know you better so we can provide personalized support.
           </CardDescription>
           <div className="flex justify-center gap-2 pt-4">
             {[1, 2, 3, 4].map((s) => (
               <div
                 key={s}
-                className={`h-2 w-12 rounded-full transition-colors ${s <= step ? "bg-primary" : "bg-muted"}`}
+                className={`h-2 w-10 sm:w-12 rounded-full transition-colors ${s <= step ? "bg-primary" : "bg-muted"}`}
               />
             ))}
           </div>
         </CardHeader>
 
-        <CardContent className="space-y-6">
+        <CardContent className="space-y-6 px-4 sm:px-6">
           {step === 1 && (
             <div className="space-y-4 animate-in fade-in duration-300">
               <div className="space-y-2">
