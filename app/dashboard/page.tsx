@@ -4,7 +4,6 @@ import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import Image from "next/image"
-import { createBrowserClient } from "@supabase/ssr"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { MoodSelector } from "@/components/mood-selector"
@@ -17,7 +16,7 @@ import {
   setupDailyNotifications,
 } from "@/lib/notifications"
 import type { UserProfile, MoodEntry } from "@/lib/types"
-import { MessageSquare, TrendingUp, Heart, Bell, BellOff, LogOut } from "lucide-react"
+import { MessageSquare, TrendingUp, Heart, Bell, BellOff } from "lucide-react"
 
 export default function DashboardPage() {
   const router = useRouter()
@@ -93,15 +92,6 @@ export default function DashboardPage() {
     }
   }
 
-  const handleLogout = async () => {
-    const supabase = createBrowserClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    )
-    await supabase.auth.signOut()
-    router.push("/auth/login")
-  }
-
   if (isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -129,21 +119,16 @@ export default function DashboardPage() {
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            {isNotificationSupported() && (
-              <Button
-                variant={notificationsEnabled ? "default" : "outline"}
-                size="icon"
-                onClick={notificationsEnabled ? handleDisableNotifications : handleEnableNotifications}
-                title={notificationsEnabled ? "Disable daily reminders" : "Enable daily reminders"}
-              >
-                {notificationsEnabled ? <Bell className="h-5 w-5" /> : <BellOff className="h-5 w-5" />}
-              </Button>
-            )}
-            <Button variant="outline" size="icon" onClick={handleLogout} title="Log out">
-              <LogOut className="h-5 w-5" />
+          {isNotificationSupported() && (
+            <Button
+              variant={notificationsEnabled ? "default" : "outline"}
+              size="icon"
+              onClick={notificationsEnabled ? handleDisableNotifications : handleEnableNotifications}
+              title={notificationsEnabled ? "Disable daily reminders" : "Enable daily reminders"}
+            >
+              {notificationsEnabled ? <Bell className="h-5 w-5" /> : <BellOff className="h-5 w-5" />}
             </Button>
-          </div>
+          )}
         </div>
 
         {showNotificationPrompt && (
