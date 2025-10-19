@@ -4,39 +4,40 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { MOOD_EMOJIS, MOOD_LABELS } from "@/lib/mood-utils"
-import { saveMoodEntry } from "@/lib/supabase-storage"
+import { saveMoodEntry, getUserProfile } from "@/lib/storage"
 import type { MoodEntry } from "@/lib/types"
 
 interface MoodSelectorProps {
   onMoodSaved?: () => void
+  todaysMood?: MoodEntry | null
 }
 
-export function MoodSelector({ onMoodSaved }: MoodSelectorProps) {
-  const [selectedMood, setSelectedMood] = useState<1 | 2 | 3 | 4 | 5 | null>(null)
+export function MoodSelector({ onMoodSaved, todaysMood }: MoodSelectorProps) {
+  const [selectedMood, setSelectedMood] = useState<1 | 2 | 3 | 4 | 5 | null>(todaysMood?.mood || null)
   const [isSaving, setIsSaving] = useState(false)
-  const [hasSavedToday, setHasSavedToday] = useState(false)
 
-  const handleSaveMood = async () => {
+  const handleSaveMood = () => {
     if (!selectedMood) return
 
     setIsSaving(true)
+    const profile = getUserProfile()
 
-    try {
-      const entry: MoodEntry = {
-        mood: selectedMood,
-        date: new Date().toISOString(),
-        note: undefined,
-      }
-
-      await saveMoodEntry(entry)
-      setHasSavedToday(true)
-      onMoodSaved?.()
-    } catch (error) {
-      console.error("Error saving mood:", error)
-      alert("Failed to save mood. Please try again.")
-    } finally {
+    if (!profile) {
       setIsSaving(false)
+      return
     }
+
+    const entry: MoodEntry = {
+      id: crypto.randomUUID(),
+      userId: profile.id,
+      mood: selectedMood,
+      date: new Date().toISOString().split("T")[0],
+      timestamp: Date.now(),
+    }
+
+    saveMoodEntry(entry)
+    setIsSaving(false)
+    onMoodSaved?.()
   }
 
   return (
@@ -66,12 +67,12 @@ export function MoodSelector({ onMoodSaved }: MoodSelectorProps) {
 
         {selectedMood && (
           <div className="animate-in fade-in duration-300">
-            <Button onClick={handleSaveMood} disabled={isSaving || hasSavedToday} className="w-full">
-              {hasSavedToday ? "Mood Recorded Today" : isSaving ? "Saving..." : "Save Mood"}
+            <Button onClick={handleSaveMood} disabled={isSaving || !!todaysMood} className="w-full">
+              {todaysMood ? "Mood Already Recorded Today" : isSaving ? "Saving..." : "Save Mood"}
             </Button>
-            {hasSavedToday && (
+            {todaysMood && (
               <p className="text-xs text-muted-foreground text-center mt-2">
-                You've recorded your mood today. Come back tomorrow!
+                You've already recorded your mood today. Come back tomorrow!
               </p>
             )}
           </div>

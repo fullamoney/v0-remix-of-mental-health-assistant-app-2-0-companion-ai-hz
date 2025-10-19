@@ -25,7 +25,7 @@ export function calculateAverageMood(entries: MoodEntry[]): number {
 export function getMoodTrend(entries: MoodEntry[]): "improving" | "stable" | "declining" {
   if (entries.length < 2) return "stable"
 
-  const sortedEntries = [...entries].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+  const sortedEntries = [...entries].sort((a, b) => a.timestamp - b.timestamp)
   const halfPoint = Math.floor(sortedEntries.length / 2)
 
   const firstHalf = sortedEntries.slice(0, halfPoint)
@@ -54,15 +54,16 @@ export function getEntriesForPeriod(
   }
 
   const cutoff = now - periodMs[period]
-  return entries.filter((entry) => new Date(entry.date).getTime() >= cutoff)
+  return entries.filter((entry) => entry.timestamp >= cutoff)
 }
 
 export function calculateProgressSummary(
+  userId: string,
   entries: MoodEntry[],
   period: "daily" | "weekly" | "biweekly" | "monthly",
 ): ProgressSummary {
   const periodEntries = getEntriesForPeriod(entries, period)
-  const uniqueDates = new Set(periodEntries.map((e) => e.date.split("T")[0]))
+  const uniqueDates = new Set(periodEntries.map((e) => e.date))
 
   const totalDays = {
     daily: 1,
@@ -72,6 +73,7 @@ export function calculateProgressSummary(
   }
 
   return {
+    userId,
     period,
     averageMood: calculateAverageMood(periodEntries),
     moodTrend: getMoodTrend(periodEntries),
