@@ -7,46 +7,89 @@ import Image from "next/image"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { MoodSelector } from "@/components/mood-selector"
-import { getUserProfile, getMoodEntries } from "@/lib/supabase-storage"
+import { getUserProfile, getTodaysMoodEntry, getMoodEntries, isOnboardingComplete } from "@/lib/storage"
 import { calculateAverageMood, MOOD_EMOJIS } from "@/lib/mood-utils"
-import { createClient } from "@/lib/supabase/client"
+import {
+  isNotificationSupported,
+  enableNotifications,
+  disableNotifications,
+  setupDailyNotifications,
+} from "@/lib/notifications"
 import type { UserProfile, MoodEntry } from "@/lib/types"
-import { MessageSquare, TrendingUp, Heart, LogOut } from "lucide-react"
+import { MessageSquare, TrendingUp, Heart, Bell, BellOff } from "lucide-react"
 
 export default function DashboardPage() {
   const router = useRouter()
   const [profile, setProfile] = useState<UserProfile | null>(null)
+  const [todaysMood, setTodaysMood] = useState<MoodEntry | null>(null)
   const [recentMoods, setRecentMoods] = useState<MoodEntry[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false)
+  const [showNotificationPrompt, setShowNotificationPrompt] = useState(false)
 
   useEffect(() => {
-    const loadData = async () => {
-      const userProfile = await getUserProfile()
-
-      if (!userProfile) {
-        router.push("/auth/login")
-        return
-      }
-
-      setProfile(userProfile)
-
-      const moods = await getMoodEntries()
-      setRecentMoods(moods.slice(0, 7))
-      setIsLoading(false)
+    if (!isOnboardingComplete()) {
+      router.push("/onboarding")
+      return
     }
 
-    loadData()
+    const userProfile = getUserProfile()
+    if (!userProfile) {
+      router.push("/onboarding")
+      return
+    }
+
+    setProfile(userProfile)
+    setTodaysMood(getTodaysMoodEntry(userProfile.id))
+
+    const allMoods = getMoodEntries()
+    const userMoods = allMoods.filter((m) => m.userId === userProfile.id)
+    setRecentMoods(userMoods.slice(-7).reverse())
+
+    const notifEnabled = userProfile.notificationSettings?.enabled || false
+    setNotificationsEnabled(notifEnabled)
+
+    // Show notification prompt if not set up yet and supported
+    if (isNotificationSupported() && !userProfile.notificationSettings) {
+      setShowNotificationPrompt(true)
+    }
+
+    // Set up notifications if enabled
+    if (notifEnabled) {
+      setupDailyNotifications()
+    }
+
+    setIsLoading(false)
   }, [router])
 
-  const handleMoodSaved = async () => {
-    const moods = await getMoodEntries()
-    setRecentMoods(moods.slice(0, 7))
+  const handleMoodSaved = () => {
+    if (profile) {
+      setTodaysMood(getTodaysMoodEntry(profile.id))
+      const allMoods = getMoodEntries()
+      const userMoods = allMoods.filter((m) => m.userId === profile.id)
+      setRecentMoods(userMoods.slice(-7).reverse())
+    }
   }
 
-  const handleLogout = async () => {
-    const supabase = createClient()
-    await supabase.auth.signOut()
-    router.push("/auth/login")
+  const handleEnableNotifications = async () => {
+    const success = await enableNotifications("09:00")
+    if (success) {
+      setNotificationsEnabled(true)
+      setShowNotificationPrompt(false)
+      const updatedProfile = getUserProfile()
+      if (updatedProfile) {
+        setProfile(updatedProfile)
+      }
+    }
+  }
+
+  const handleDisableNotifications = () => {
+    disableNotifications()
+    setNotificationsEnabled(false)
+    const updatedProfile = getUserProfile()
+    if (updatedProfile) {
+      setProfile(updatedProfile)
+    }
   }
 
   if (isLoading) {
@@ -76,13 +119,43 @@ export default function DashboardPage() {
               </p>
             </div>
           </div>
-          <Button variant="outline" size="icon" onClick={handleLogout} title="Logout">
-            <LogOut className="h-5 w-5" />
-          </Button>
+          {isNotificationSupported() && (
+            <Button
+              variant={notificationsEnabled ? "default" : "outline"}
+              size="icon"
+              onClick={notificationsEnabled ? handleDisableNotifications : handleEnableNotifications}
+              title={notificationsEnabled ? "Disable daily reminders" : "Enable daily reminders"}
+            >
+              {notificationsEnabled ? <Bell className="h-5 w-5" /> : <BellOff className="h-5 w-5" />}
+            </Button>
+          )}
         </div>
 
+        {showNotificationPrompt && (
+          <Card className="border-primary/50 bg-primary/5">
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <Bell className="h-6 w-6 text-primary" />
+                <CardTitle>Stay on track with daily reminders</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-pretty">
+                Get a gentle daily reminder at 9:00 AM to check in with Buddy AI and log your mood. Consistent tracking
+                helps you understand your mental wellness journey better.
+              </p>
+              <div className="flex gap-3">
+                <Button onClick={handleEnableNotifications}>Enable Reminders</Button>
+                <Button variant="outline" onClick={() => setShowNotificationPrompt(false)}>
+                  Maybe Later
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Mood Tracking */}
-        <MoodSelector onMoodSaved={handleMoodSaved} />
+        <MoodSelector onMoodSaved={handleMoodSaved} todaysMood={todaysMood} />
 
         {/* Quick Actions */}
         <div className="grid md:grid-cols-3 gap-4">
@@ -156,9 +229,9 @@ export default function DashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="flex flex-wrap gap-3">
-                {recentMoods.map((mood, index) => (
+                {recentMoods.map((mood) => (
                   <div
-                    key={index}
+                    key={mood.id}
                     className="flex flex-col items-center gap-1 p-3 rounded-lg bg-muted/50 border border-border"
                   >
                     <span className="text-3xl">{MOOD_EMOJIS[mood.mood]}</span>

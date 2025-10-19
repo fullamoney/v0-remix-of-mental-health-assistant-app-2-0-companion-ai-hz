@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -8,13 +8,13 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Textarea } from "@/components/ui/textarea"
-import { createClient } from "@/lib/supabase/client"
+import { saveUserProfile } from "@/lib/storage"
+import type { UserProfile } from "@/lib/types"
 import Image from "next/image"
 
 export default function OnboardingPage() {
   const router = useRouter()
   const [step, setStep] = useState(1)
-  const [loading, setLoading] = useState(false)
   const [formData, setFormData] = useState({
     name: "",
     age: "",
@@ -31,88 +31,50 @@ export default function OnboardingPage() {
     traumaDescription: "",
     traumaTimeAgo: "",
     traumaFeelings: "",
-    goals: [] as string[],
   })
-
-  useEffect(() => {
-    const checkAuth = async () => {
-      const supabase = createClient()
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-
-      if (!user) {
-        router.push("/auth/login")
-      }
-    }
-
-    checkAuth()
-  }, [router])
 
   const updateField = (field: string, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }))
   }
 
-  const handleSubmit = async () => {
-    setLoading(true)
-
-    try {
-      const supabase = createClient()
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-
-      if (!user) throw new Error("No user found")
-
-      const profileData = {
-        id: user.id,
-        name: formData.name,
-        age: Number.parseInt(formData.age),
-        goals: formData.goals,
-      }
-
-      if (formData.gender) {
-        profileData.gender = formData.gender
-      }
-
-      if (formData.hasMentalIllness === "yes") {
-        profileData.mentalIllness = {
-          condition: formData.mentalCondition,
-          duration: formData.mentalDuration,
-          feelings: formData.mentalFeelings,
-        }
-      }
-
-      if (formData.hasPhysicalIllness === "yes") {
-        profileData.physicalIllness = {
-          condition: formData.physicalCondition,
-          duration: formData.physicalDuration,
-          feelings: formData.physicalFeelings,
-        }
-      }
-
-      if (formData.hasTrauma === "yes") {
-        profileData.trauma = {
-          description: formData.traumaDescription,
-          timeAgo: formData.traumaTimeAgo,
-          feelings: formData.traumaFeelings,
-        }
-      }
-
-      const { error } = await supabase.from("profiles").upsert(profileData)
-
-      if (error) throw error
-
-      router.push("/dashboard")
-    } catch (error) {
-      console.error("Error saving profile:", error)
-      alert("Failed to save profile. Please try again.")
-    } finally {
-      setLoading(false)
+  const handleSubmit = () => {
+    const profile: UserProfile = {
+      id: crypto.randomUUID(),
+      name: formData.name,
+      age: Number.parseInt(formData.age),
+      gender: formData.gender,
+      createdAt: new Date().toISOString(),
     }
+
+    if (formData.hasMentalIllness === "yes") {
+      profile.mentalIllness = {
+        condition: formData.mentalCondition,
+        duration: formData.mentalDuration,
+        feelings: formData.mentalFeelings,
+      }
+    }
+
+    if (formData.hasPhysicalIllness === "yes") {
+      profile.physicalIllness = {
+        condition: formData.physicalCondition,
+        duration: formData.physicalDuration,
+        feelings: formData.physicalFeelings,
+      }
+    }
+
+    if (formData.hasTrauma === "yes") {
+      profile.trauma = {
+        description: formData.traumaDescription,
+        timeAgo: formData.traumaTimeAgo,
+        feelings: formData.traumaFeelings,
+      }
+    }
+
+    saveUserProfile(profile)
+    router.push("/dashboard")
   }
 
-  const canProceedStep1 = formData.name && formData.age
+  const canProceedStep1 = formData.name && formData.age && formData.gender
   const canProceedStep2 =
     formData.hasMentalIllness &&
     (formData.hasMentalIllness === "no" ||
@@ -430,42 +392,21 @@ export default function OnboardingPage() {
                 </div>
               )}
 
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="goals">What are your wellness goals? (Optional)</Label>
-                  <Textarea
-                    id="goals"
-                    placeholder="e.g., Reduce anxiety, improve sleep, build healthy habits..."
-                    value={formData.goals.join(", ")}
-                    onChange={(e) =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        goals: e.target.value
-                          .split(",")
-                          .map((g) => g.trim())
-                          .filter(Boolean),
-                      }))
-                    }
-                    rows={4}
-                  />
-                </div>
-
-                <div className="flex gap-2">
-                  <Button onClick={() => setStep(3)} variant="outline" className="w-full">
-                    Back
-                  </Button>
-                  <Button onClick={handleSubmit} disabled={loading} className="w-full">
-                    {loading ? "Saving..." : "Complete Setup"}
-                  </Button>
-                </div>
+              <div className="flex gap-2">
+                <Button onClick={() => setStep(3)} variant="outline" className="w-full">
+                  Back
+                </Button>
+                <Button onClick={handleSubmit} disabled={!canProceedStep4} className="w-full">
+                  Complete Setup
+                </Button>
               </div>
             </div>
           )}
 
           <div className="pt-4 border-t">
             <p className="text-xs text-muted-foreground text-center text-pretty">
-              Your information is stored securely in the cloud with end-to-end encryption. We use it only to personalize
-              your experience and provide better support.
+              Your information is stored securely and privately on your device. We use it only to personalize your
+              experience and provide better support.
             </p>
           </div>
         </CardContent>

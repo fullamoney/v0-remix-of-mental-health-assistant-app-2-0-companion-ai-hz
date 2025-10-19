@@ -1,15 +1,16 @@
 "use client"
 
 import type React from "react"
+
 import { useEffect, useState, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { useChat } from "@ai-sdk/react"
+import { DefaultChatTransport } from "ai"
 import Image from "next/image"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Textarea } from "@/components/ui/textarea"
-import { getUserProfile, saveChatMessage } from "@/lib/supabase-storage"
-import { createClient } from "@/lib/supabase/client"
+import { getUserProfile, isOnboardingComplete, saveChatMessage } from "@/lib/storage"
 import { ArrowLeft, Send, Mic, MicOff, AlertCircle } from "lucide-react"
 import Link from "next/link"
 import type { UserProfile } from "@/lib/types"
@@ -24,75 +25,43 @@ export default function ChatPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    const loadData = async () => {
-      const userProfile = await getUserProfile()
-
-      if (!userProfile) {
-        router.push("/auth/login")
-        return
-      }
-
-      setProfile(userProfile)
-      setIsLoading(false)
+    if (!isOnboardingComplete()) {
+      router.push("/onboarding")
+      return
     }
 
-    loadData()
+    const userProfile = getUserProfile()
+    if (!userProfile) {
+      router.push("/onboarding")
+      return
+    }
+
+    setProfile(userProfile)
+    setIsLoading(false)
   }, [router])
 
-  useEffect(() => {
-    if (!profile) return
-
-    const supabase = createClient()
-
-    const channel = supabase
-      .channel("chat_messages")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "chat_messages",
-        },
-        () => {
-          // Reload messages when changes occur
-          reload()
-        },
-      )
-      .subscribe()
-
-    return () => {
-      supabase.removeChannel(channel)
-    }
-  }, [profile])
-
-  const { messages, sendMessage, status, error, reload } = useChat({
-    api: "/api/chat",
+  const { messages, sendMessage, status, error } = useChat({
+    transport: new DefaultChatTransport({ api: "/api/chat" }),
     body: () => ({
       userName: profile?.name || "there",
     }),
-    onFinish: async (message) => {
-      await saveChatMessage({
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content: message.content,
-      })
-    },
   })
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages])
 
-  const handleFormSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleFormSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (profile && inputValue.trim()) {
-      await saveChatMessage({
+      saveChatMessage({
         id: crypto.randomUUID(),
+        userId: profile.id,
         role: "user",
         content: inputValue,
+        timestamp: Date.now(),
       })
-
-      sendMessage({ content: inputValue })
+      sendMessage({ text: inputValue })
       setInputValue("")
     }
   }
@@ -229,7 +198,16 @@ export default function ChatPage() {
                     message.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
                   }`}
                 >
-                  <p className="text-sm whitespace-pre-wrap text-pretty">{message.content}</p>
+                  {message.parts.map((part, index) => {
+                    if (part.type === "text") {
+                      return (
+                        <p key={index} className="text-sm whitespace-pre-wrap text-pretty">
+                          {part.text}
+                        </p>
+                      )
+                    }
+                    return null
+                  })}
                 </div>
               </div>
             ))}

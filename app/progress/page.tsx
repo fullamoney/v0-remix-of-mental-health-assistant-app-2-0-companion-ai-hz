@@ -6,33 +6,44 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { getMoodEntries, getChatMessages } from "@/lib/supabase-storage"
+import { getUserProfile, getMoodEntries, getChatMessages, isOnboardingComplete } from "@/lib/storage"
 import { calculateProgressSummary, getEntriesForPeriod, MOOD_EMOJIS, MOOD_LABELS } from "@/lib/mood-utils"
-import type { MoodEntry } from "@/lib/types"
+import type { UserProfile, MoodEntry, ChatMessage } from "@/lib/types"
 import { ArrowLeft, TrendingUp, TrendingDown, Minus, Award, MessageSquare } from "lucide-react"
 import { Line, LineChart, Bar, BarChart, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from "recharts"
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
 
 export default function ProgressPage() {
   const router = useRouter()
+  const [profile, setProfile] = useState<UserProfile | null>(null)
   const [moodEntries, setMoodEntries] = useState<MoodEntry[]>([])
-  const [chatCount, setChatCount] = useState(0)
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [selectedPeriod, setSelectedPeriod] = useState<"weekly" | "biweekly" | "monthly">("weekly")
 
   useEffect(() => {
-    const loadData = async () => {
-      const moods = await getMoodEntries()
-      setMoodEntries(moods)
-
-      const messages = await getChatMessages()
-      const userMessages = messages.filter((m) => m.role === "user")
-      setChatCount(userMessages.length)
-
-      setIsLoading(false)
+    if (!isOnboardingComplete()) {
+      router.push("/onboarding")
+      return
     }
 
-    loadData()
+    const userProfile = getUserProfile()
+    if (!userProfile) {
+      router.push("/onboarding")
+      return
+    }
+
+    setProfile(userProfile)
+
+    const allMoods = getMoodEntries()
+    const userMoods = allMoods.filter((m) => m.userId === userProfile.id)
+    setMoodEntries(userMoods)
+
+    const allMessages = getChatMessages()
+    const userMessages = allMessages.filter((m) => m.userId === userProfile.id)
+    setChatMessages(userMessages)
+
+    setIsLoading(false)
   }, [router])
 
   if (isLoading) {
@@ -46,12 +57,12 @@ export default function ProgressPage() {
     )
   }
 
-  const summary = calculateProgressSummary(moodEntries, selectedPeriod)
+  const summary = profile ? calculateProgressSummary(profile.id, moodEntries, selectedPeriod) : null
   const periodEntries = getEntriesForPeriod(moodEntries, selectedPeriod)
 
   // Prepare chart data
   const chartData = periodEntries
-    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+    .sort((a, b) => a.timestamp - b.timestamp)
     .map((entry) => ({
       date: new Date(entry.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
       mood: entry.mood,
@@ -82,6 +93,7 @@ export default function ProgressPage() {
   }
 
   const participationRate = summary ? (summary.participationDays / summary.totalDays) * 100 : 0
+  const userChatCount = chatMessages.filter((m) => m.role === "user").length
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
@@ -284,13 +296,13 @@ export default function ProgressPage() {
                   </div>
                 )}
 
-                {chatCount >= 5 && (
+                {userChatCount >= 5 && (
                   <div className="flex items-start gap-3 p-3 rounded-lg bg-primary/10 border border-primary/20">
                     <MessageSquare className="h-5 w-5 text-primary mt-0.5" />
                     <div>
                       <p className="font-semibold text-sm">Active Communicator</p>
                       <p className="text-xs text-muted-foreground">
-                        You've had {chatCount} conversations with Buddy AI. Keep reaching out!
+                        You've had {userChatCount} conversations with Companion AI. Keep reaching out!
                       </p>
                     </div>
                   </div>

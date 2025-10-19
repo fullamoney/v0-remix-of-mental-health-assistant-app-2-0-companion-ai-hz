@@ -1,8 +1,8 @@
 export interface UserProfile {
   id: string
   name: string
-  age?: number
-  gender?: string
+  age: number
+  gender: string
   mentalIllness?: {
     condition: string
     duration: string
@@ -18,20 +18,20 @@ export interface UserProfile {
     timeAgo: string
     feelings: string
   }
-  createdAt?: string
-  goals?: string[]
-  onboardingComplete?: boolean
-  notificationEnabled?: boolean
-  notificationTime?: string
+  createdAt: string
+  notificationSettings?: {
+    enabled: boolean
+    dailyReminderTime: string // HH:MM format (24-hour)
+    lastNotificationDate?: string
+  }
 }
 
 export interface MoodEntry {
   id: string
   userId: string
   mood: 1 | 2 | 3 | 4 | 5
-  date: string // ISO string from Supabase
-  timestamp?: number
-  note?: string
+  date: string
+  timestamp: number
 }
 
 export interface ChatMessage {
@@ -39,7 +39,7 @@ export interface ChatMessage {
   userId: string
   role: "user" | "assistant"
   content: string
-  timestamp?: number
+  timestamp: number
 }
 
 export interface ProgressSummary {
@@ -49,10 +49,4 @@ export interface ProgressSummary {
   moodTrend: "improving" | "stable" | "declining"
   participationDays: number
   totalDays: number
-}
-
-export interface Message {
-  id: string
-  role: "user" | "assistant"
-  content: string
 }
