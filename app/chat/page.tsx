@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useEffect, useState, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { useChat } from "@ai-sdk/react"
@@ -10,40 +9,85 @@ import Image from "next/image"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Textarea } from "@/components/ui/textarea"
-import { getUserProfile, isOnboardingComplete, saveChatMessage, loadChatMessagesFromSupabase } from "@/lib/storage"
 import { ArrowLeft, Send, Mic, MicOff, AlertCircle } from "lucide-react"
 import Link from "next/link"
-import type { UserProfile } from "@/lib/types"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { createClient } from "@/lib/supabase/client"
 
 export default function ChatPage() {
   const router = useRouter()
-  const [profile, setProfile] = useState<UserProfile | null>(null)
+  const [userName, setUserName] = useState<string>("")
+  const [userId, setUserId] = useState<string>("")
   const [isLoading, setIsLoading] = useState(true)
   const [isListening, setIsListening] = useState(false)
   const [inputValue, setInputValue] = useState("")
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (!isOnboardingComplete()) {
-      router.push("/onboarding")
-      return
+    const loadUserAndMessages = async () => {
+      const supabase = createClient()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+
+      if (!user) {
+        router.push("/auth/login")
+        return
+      }
+
+      setUserId(user.id)
+
+      // Load profile
+      const { data: profile } = await supabase.from("profiles").select("*").eq("id", user.id).single()
+
+      if (profile) {
+        setUserName(profile.name)
+      }
+
+      setIsLoading(false)
     }
 
-    const userProfile = getUserProfile()
-    if (!userProfile) {
-      router.push("/onboarding")
-      return
+    loadUserAndMessages()
+  }, [router])
+
+  const { messages, sendMessage, status, error, setMessages } = useChat({
+    transport: new DefaultChatTransport({ api: "/api/chat" }),
+    body: () => ({
+      userName: userName || "there",
+      userId: userId,
+    }),
+    initialMessages: [],
+  })
+
+  useEffect(() => {
+    if (!userId) return
+
+    const loadHistory = async () => {
+      const supabase = createClient()
+      const { data, error } = await supabase
+        .from("messages")
+        .select("*")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: true })
+
+      if (error) {
+        console.error("[v0] Error loading messages:", error)
+        return
+      }
+
+      if (data && data.length > 0) {
+        console.log("[v0] Loaded chat messages from Supabase:", data.length)
+        const formattedMessages = data.map((msg) => ({
+          id: msg.id,
+          role: msg.role as "user" | "assistant",
+          content: msg.content,
+          parts: [{ type: "text" as const, text: msg.content }],
+        }))
+        setMessages(formattedMessages)
+      }
     }
 
-    setProfile(userProfile)
-
-    loadChatMessagesFromSupabase(userProfile.id).then((messages) => {
-      console.log("[v0] Loaded chat messages from Supabase:", messages.length)
-    })
-
-    setIsLoading(false)
+    loadHistory()
 
     const supabase = createClient()
     const channel = supabase
@@ -54,7 +98,7 @@ export default function ChatPage() {
           event: "INSERT",
           schema: "public",
           table: "messages",
-          filter: `user_id=eq.${userProfile.id}`,
+          filter: `user_id=eq.${userId}`,
         },
         (payload) => {
           console.log("[v0] Real-time message received:", payload)
@@ -65,14 +109,37 @@ export default function ChatPage() {
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [router])
+  }, [userId, setMessages])
 
-  const { messages, sendMessage, status, error } = useChat({
-    transport: new DefaultChatTransport({ api: "/api/chat" }),
-    body: () => ({
-      userName: profile?.name || "there",
-    }),
-  })
+  useEffect(() => {
+    if (messages.length === 0 || !userId) return
+
+    const saveLastMessage = async () => {
+      const lastMessage = messages[messages.length - 1]
+      const supabase = createClient()
+
+      // Check if message already exists
+      const { data: existing } = await supabase.from("messages").select("id").eq("id", lastMessage.id).single()
+
+      if (!existing) {
+        const { error } = await supabase.from("messages").insert({
+          id: lastMessage.id,
+          user_id: userId,
+          role: lastMessage.role,
+          content: lastMessage.content,
+          created_at: new Date().toISOString(),
+        })
+
+        if (error) {
+          console.error("[v0] Error saving message to Supabase:", error)
+        } else {
+          console.log("[v0] Message saved to Supabase")
+        }
+      }
+    }
+
+    saveLastMessage()
+  }, [messages, userId])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -80,14 +147,7 @@ export default function ChatPage() {
 
   const handleFormSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
-    if (profile && inputValue.trim()) {
-      saveChatMessage({
-        id: crypto.randomUUID(),
-        userId: profile.id,
-        role: "user",
-        content: inputValue,
-        timestamp: Date.now(),
-      })
+    if (inputValue.trim()) {
       sendMessage({ text: inputValue })
       setInputValue("")
     }
@@ -183,7 +243,7 @@ export default function ChatPage() {
               <div className="flex items-center justify-center h-full">
                 <div className="text-center space-y-2 max-w-md">
                   <p className="text-muted-foreground text-pretty">
-                    Hello {profile?.name}, I'm here to support you. How are you feeling today? What's on your mind?
+                    Hello {userName}, I'm here to support you. How are you feeling today? What's on your mind?
                   </p>
                   <div className="grid grid-cols-1 gap-2 pt-4">
                     <Button
@@ -225,16 +285,7 @@ export default function ChatPage() {
                     message.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
                   }`}
                 >
-                  {message.parts.map((part, index) => {
-                    if (part.type === "text") {
-                      return (
-                        <p key={index} className="text-sm whitespace-pre-wrap text-pretty">
-                          {part.text}
-                        </p>
-                      )
-                    }
-                    return null
-                  })}
+                  <p className="text-sm whitespace-pre-wrap text-pretty">{message.content}</p>
                 </div>
               </div>
             ))}

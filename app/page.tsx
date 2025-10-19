@@ -2,23 +2,28 @@
 
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import { isOnboardingComplete } from "@/lib/storage"
+import { createClient } from "@/lib/supabase/client"
 
 export default function HomePage() {
   const router = useRouter()
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    const checkOnboarding = () => {
-      if (isOnboardingComplete()) {
+    const checkAuth = async () => {
+      const supabase = createClient()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+
+      if (user) {
         router.push("/dashboard")
       } else {
-        router.push("/onboarding")
+        router.push("/auth/login")
       }
+      setIsLoading(false)
     }
 
-    checkOnboarding()
-    setIsLoading(false)
+    checkAuth()
   }, [router])
 
   if (isLoading) {
