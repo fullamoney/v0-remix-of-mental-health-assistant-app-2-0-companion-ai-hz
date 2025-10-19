@@ -7,16 +7,20 @@ import Image from "next/image"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { MoodSelector } from "@/components/mood-selector"
+import { getUserProfile, getTodaysMoodEntry, getMoodEntries, isOnboardingComplete } from "@/lib/storage"
 import { calculateAverageMood, MOOD_EMOJIS } from "@/lib/mood-utils"
-import { isNotificationSupported, enableNotifications, disableNotifications } from "@/lib/notifications"
-import type { MoodEntry } from "@/lib/types"
-import { MessageSquare, TrendingUp, Heart, Bell, BellOff, LogOut } from "lucide-react"
-import { createClient } from "@/lib/supabase/client"
+import {
+  isNotificationSupported,
+  enableNotifications,
+  disableNotifications,
+  setupDailyNotifications,
+} from "@/lib/notifications"
+import type { UserProfile, MoodEntry } from "@/lib/types"
+import { MessageSquare, TrendingUp, Heart, Bell, BellOff } from "lucide-react"
 
 export default function DashboardPage() {
   const router = useRouter()
-  const [userName, setUserName] = useState<string>("")
-  const [userId, setUserId] = useState<string>("")
+  const [profile, setProfile] = useState<UserProfile | null>(null)
   const [todaysMood, setTodaysMood] = useState<MoodEntry | null>(null)
   const [recentMoods, setRecentMoods] = useState<MoodEntry[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -24,119 +28,46 @@ export default function DashboardPage() {
   const [showNotificationPrompt, setShowNotificationPrompt] = useState(false)
 
   useEffect(() => {
-    const loadUserData = async () => {
-      const supabase = createClient()
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-
-      if (!user) {
-        router.push("/auth/login")
-        return
-      }
-
-      setUserId(user.id)
-
-      // Load profile
-      const { data: profile } = await supabase.from("profiles").select("*").eq("id", user.id).single()
-
-      if (profile) {
-        setUserName(profile.name)
-      }
-
-      // Load today's mood
-      const today = new Date().toISOString().split("T")[0]
-      const { data: todayMood } = await supabase
-        .from("mood_entries")
-        .select("*")
-        .eq("user_id", user.id)
-        .gte("created_at", `${today}T00:00:00`)
-        .lte("created_at", `${today}T23:59:59`)
-        .single()
-
-      if (todayMood) {
-        setTodaysMood({
-          id: todayMood.id,
-          userId: todayMood.user_id,
-          mood: Number.parseInt(todayMood.mood),
-          note: todayMood.note || undefined,
-          date: new Date(todayMood.created_at).toISOString().split("T")[0],
-          timestamp: new Date(todayMood.created_at).getTime(),
-        })
-      }
-
-      // Load recent moods (last 7 days)
-      const { data: moods } = await supabase
-        .from("mood_entries")
-        .select("*")
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false })
-        .limit(7)
-
-      if (moods) {
-        setRecentMoods(
-          moods.map((m) => ({
-            id: m.id,
-            userId: m.user_id,
-            mood: Number.parseInt(m.mood),
-            note: m.note || undefined,
-            date: new Date(m.created_at).toISOString().split("T")[0],
-            timestamp: new Date(m.created_at).getTime(),
-          })),
-        )
-      }
-
-      // Check notification settings
-      if (isNotificationSupported()) {
-        setShowNotificationPrompt(true)
-      }
-
-      setIsLoading(false)
+    if (!isOnboardingComplete()) {
+      router.push("/onboarding")
+      return
     }
 
-    loadUserData()
+    const userProfile = getUserProfile()
+    if (!userProfile) {
+      router.push("/onboarding")
+      return
+    }
+
+    setProfile(userProfile)
+    setTodaysMood(getTodaysMoodEntry(userProfile.id))
+
+    const allMoods = getMoodEntries()
+    const userMoods = allMoods.filter((m) => m.userId === userProfile.id)
+    setRecentMoods(userMoods.slice(-7).reverse())
+
+    const notifEnabled = userProfile.notificationSettings?.enabled || false
+    setNotificationsEnabled(notifEnabled)
+
+    // Show notification prompt if not set up yet and supported
+    if (isNotificationSupported() && !userProfile.notificationSettings) {
+      setShowNotificationPrompt(true)
+    }
+
+    // Set up notifications if enabled
+    if (notifEnabled) {
+      setupDailyNotifications()
+    }
+
+    setIsLoading(false)
   }, [router])
 
-  const handleMoodSaved = async () => {
-    const supabase = createClient()
-    const today = new Date().toISOString().split("T")[0]
-    const { data: todayMood } = await supabase
-      .from("mood_entries")
-      .select("*")
-      .eq("user_id", userId)
-      .gte("created_at", `${today}T00:00:00`)
-      .lte("created_at", `${today}T23:59:59`)
-      .single()
-
-    if (todayMood) {
-      setTodaysMood({
-        id: todayMood.id,
-        userId: todayMood.user_id,
-        mood: Number.parseInt(todayMood.mood),
-        note: todayMood.note || undefined,
-        date: new Date(todayMood.created_at).toISOString().split("T")[0],
-        timestamp: new Date(todayMood.created_at).getTime(),
-      })
-    }
-
-    const { data: moods } = await supabase
-      .from("mood_entries")
-      .select("*")
-      .eq("user_id", userId)
-      .order("created_at", { ascending: false })
-      .limit(7)
-
-    if (moods) {
-      setRecentMoods(
-        moods.map((m) => ({
-          id: m.id,
-          userId: m.user_id,
-          mood: Number.parseInt(m.mood),
-          note: m.note || undefined,
-          date: new Date(m.created_at).toISOString().split("T")[0],
-          timestamp: new Date(m.created_at).getTime(),
-        })),
-      )
+  const handleMoodSaved = () => {
+    if (profile) {
+      setTodaysMood(getTodaysMoodEntry(profile.id))
+      const allMoods = getMoodEntries()
+      const userMoods = allMoods.filter((m) => m.userId === profile.id)
+      setRecentMoods(userMoods.slice(-7).reverse())
     }
   }
 
@@ -145,18 +76,20 @@ export default function DashboardPage() {
     if (success) {
       setNotificationsEnabled(true)
       setShowNotificationPrompt(false)
+      const updatedProfile = getUserProfile()
+      if (updatedProfile) {
+        setProfile(updatedProfile)
+      }
     }
   }
 
   const handleDisableNotifications = () => {
     disableNotifications()
     setNotificationsEnabled(false)
-  }
-
-  const handleLogout = async () => {
-    const supabase = createClient()
-    await supabase.auth.signOut()
-    router.push("/auth/login")
+    const updatedProfile = getUserProfile()
+    if (updatedProfile) {
+      setProfile(updatedProfile)
+    }
   }
 
   if (isLoading) {
@@ -180,27 +113,22 @@ export default function DashboardPage() {
           <div className="flex items-center gap-4">
             <Image src="/buddy-logo.png" alt="Buddy AI" width={64} height={64} className="w-16 h-auto" />
             <div className="space-y-2">
-              <h1 className="text-4xl font-bold text-balance">Welcome back, {userName}</h1>
+              <h1 className="text-4xl font-bold text-balance">Welcome back, {profile?.name}</h1>
               <p className="text-muted-foreground text-pretty">
                 Your safe space for mental wellness and emotional support
               </p>
             </div>
           </div>
-          <div className="flex gap-2">
-            {isNotificationSupported() && (
-              <Button
-                variant={notificationsEnabled ? "default" : "outline"}
-                size="icon"
-                onClick={notificationsEnabled ? handleDisableNotifications : handleEnableNotifications}
-                title={notificationsEnabled ? "Disable daily reminders" : "Enable daily reminders"}
-              >
-                {notificationsEnabled ? <Bell className="h-5 w-5" /> : <BellOff className="h-5 w-5" />}
-              </Button>
-            )}
-            <Button variant="outline" size="icon" onClick={handleLogout} title="Logout">
-              <LogOut className="h-5 w-5" />
+          {isNotificationSupported() && (
+            <Button
+              variant={notificationsEnabled ? "default" : "outline"}
+              size="icon"
+              onClick={notificationsEnabled ? handleDisableNotifications : handleEnableNotifications}
+              title={notificationsEnabled ? "Disable daily reminders" : "Enable daily reminders"}
+            >
+              {notificationsEnabled ? <Bell className="h-5 w-5" /> : <BellOff className="h-5 w-5" />}
             </Button>
-          </div>
+          )}
         </div>
 
         {showNotificationPrompt && (
@@ -227,7 +155,7 @@ export default function DashboardPage() {
         )}
 
         {/* Mood Tracking */}
-        <MoodSelector onMoodSaved={handleMoodSaved} todaysMood={todaysMood} userId={userId} />
+        <MoodSelector onMoodSaved={handleMoodSaved} todaysMood={todaysMood} />
 
         {/* Quick Actions */}
         <div className="grid md:grid-cols-3 gap-4">

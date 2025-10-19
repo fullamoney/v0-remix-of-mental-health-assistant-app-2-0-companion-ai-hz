@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -8,14 +8,13 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Textarea } from "@/components/ui/textarea"
+import { saveUserProfile } from "@/lib/storage"
+import type { UserProfile } from "@/lib/types"
 import Image from "next/image"
-import { createClient } from "@/lib/supabase/client"
 
 export default function OnboardingPage() {
   const router = useRouter()
   const [step, setStep] = useState(1)
-  const [userId, setUserId] = useState<string>("")
-  const [isLoading, setIsLoading] = useState(true)
   const [formData, setFormData] = useState({
     name: "",
     age: "",
@@ -34,53 +33,44 @@ export default function OnboardingPage() {
     traumaFeelings: "",
   })
 
-  useEffect(() => {
-    const loadUser = async () => {
-      const supabase = createClient()
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-
-      if (!user) {
-        router.push("/auth/login")
-        return
-      }
-
-      setUserId(user.id)
-
-      // Load existing profile if any
-      const { data: profile } = await supabase.from("profiles").select("*").eq("id", user.id).single()
-
-      if (profile && profile.name) {
-        setFormData((prev) => ({ ...prev, name: profile.name }))
-      }
-
-      setIsLoading(false)
-    }
-
-    loadUser()
-  }, [router])
-
   const updateField = (field: string, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }))
   }
 
-  const handleSubmit = async () => {
-    const supabase = createClient()
-
-    // Update profile in Supabase
-    const { error } = await supabase
-      .from("profiles")
-      .update({
-        name: formData.name,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", userId)
-
-    if (error) {
-      console.error("[v0] Error updating profile:", error)
+  const handleSubmit = () => {
+    const profile: UserProfile = {
+      id: crypto.randomUUID(),
+      name: formData.name,
+      age: Number.parseInt(formData.age),
+      gender: formData.gender,
+      createdAt: new Date().toISOString(),
     }
 
+    if (formData.hasMentalIllness === "yes") {
+      profile.mentalIllness = {
+        condition: formData.mentalCondition,
+        duration: formData.mentalDuration,
+        feelings: formData.mentalFeelings,
+      }
+    }
+
+    if (formData.hasPhysicalIllness === "yes") {
+      profile.physicalIllness = {
+        condition: formData.physicalCondition,
+        duration: formData.physicalDuration,
+        feelings: formData.physicalFeelings,
+      }
+    }
+
+    if (formData.hasTrauma === "yes") {
+      profile.trauma = {
+        description: formData.traumaDescription,
+        timeAgo: formData.traumaTimeAgo,
+        feelings: formData.traumaFeelings,
+      }
+    }
+
+    saveUserProfile(profile)
     router.push("/dashboard")
   }
 
@@ -96,17 +86,6 @@ export default function OnboardingPage() {
   const canProceedStep4 =
     formData.hasTrauma &&
     (formData.hasTrauma === "no" || (formData.traumaDescription && formData.traumaTimeAgo && formData.traumaFeelings))
-
-  if (isLoading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="text-center">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent mx-auto mb-4" />
-          <p className="text-muted-foreground">Loading...</p>
-        </div>
-      </div>
-    )
-  }
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-background via-background to-primary/5">
@@ -426,7 +405,7 @@ export default function OnboardingPage() {
 
           <div className="pt-4 border-t">
             <p className="text-xs text-muted-foreground text-center text-pretty">
-              Your information is stored securely in the cloud with Supabase. We use it only to personalize your
+              Your information is stored securely and privately on your device. We use it only to personalize your
               experience and provide better support.
             </p>
           </div>
