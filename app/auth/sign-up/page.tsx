@@ -74,7 +74,7 @@ export default function SignUpPage() {
         <Card className="w-full max-w-md">
           <CardHeader className="text-center">
             <div className="flex justify-center mb-4">
-              <Image src="/buddy-ai-logo.png" alt="Buddy AI Logo" width={80} height={80} className="object-contain" />
+              <Image src="/buddy-logo.png" alt="Buddy AI Logo" width={100} height={100} className="object-contain" />
             </div>
             <CardTitle className="text-2xl">Check Your Email</CardTitle>
             <CardDescription>
@@ -96,7 +96,7 @@ export default function SignUpPage() {
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <div className="flex justify-center mb-4">
-            <Image src="/buddy-ai-logo.png" alt="Buddy AI Logo" width={80} height={80} className="object-contain" />
+            <Image src="/buddy-logo.png" alt="Buddy AI Logo" width={100} height={100} className="object-contain" />
           </div>
           <CardTitle className="text-2xl">Create Account</CardTitle>
           <CardDescription>Sign up to get started with Buddy AI</CardDescription>
